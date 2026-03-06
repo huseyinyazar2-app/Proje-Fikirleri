@@ -36,17 +36,11 @@ export default function Sidebar({
     onLogout,
 }: SidebarProps) {
     const { theme, toggleTheme } = useTheme();
-    const [showNewCat, setShowNewCat] = useState(false);
-    const [newCatName, setNewCatName] = useState('');
-    const [newCatColor, setNewCatColor] = useState('#6366f1');
-    const [editingCat, setEditingCat] = useState<string | null>(null);
-    const [editName, setEditName] = useState('');
     const [ideaCounts, setIdeaCounts] = useState<Record<string, number>>({});
     const [totalIdeas, setTotalIdeas] = useState(0);
     const [projectCount, setProjectCount] = useState(0);
     const [completedCount, setCompletedCount] = useState(0);
     const [deletedCount, setDeletedCount] = useState(0);
-    const [catToDelete, setCatToDelete] = useState<Category | null>(null);
     const [isLogoutPromptOpen, setIsLogoutPromptOpen] = useState(false);
 
     useEffect(() => {
@@ -80,33 +74,7 @@ export default function Sidebar({
         return false;
     });
 
-    const handleCreateCategory = async () => {
-        if (!newCatName.trim()) return;
-        await store.createCategory(newCatName.trim(), newCatColor);
-        setNewCatName('');
-        setNewCatColor('#6366f1');
-        setShowNewCat(false);
-        onCategoriesChange();
-    };
 
-    const handleUpdateCategory = async (id: string) => {
-        if (!editName.trim()) return;
-        await store.updateCategory(id, { name: editName.trim() });
-        setEditingCat(null);
-        onCategoriesChange();
-    };
-
-    const handleDeleteCategory = async (id: string) => {
-        await store.deleteCategory(id);
-        if (selectedCategoryId === id) onSelectCategory(null);
-        onCategoriesChange();
-    };
-
-    const PRESET_COLORS = [
-        '#ef4444', '#f97316', '#eab308', '#22c55e',
-        '#14b8a6', '#0ea5e9', '#3b82f6', '#6366f1',
-        '#8b5cf6', '#d946ef', '#ec4899', '#78716c',
-    ];
 
     return (
         <aside className={`sidebar scrollbar-thin ${isOpen ? 'open' : ''}`}>
@@ -265,171 +233,70 @@ export default function Sidebar({
                 </button>
             </nav>
 
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                {/* Categories */}
-                <div style={{ padding: '4px 12px', flexShrink: 0 }}>
-                    <div style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '8px 4px', marginBottom: 4
-                    }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>
-                            Kategoriler
-                        </span>
-                        <button
-                            onClick={() => setShowNewCat(!showNewCat)}
-                            className="btn-ghost"
-                            style={{ padding: '4px 8px', fontSize: 16 }}
-                        >
-                            {showNewCat ? '✕' : '+'}
-                        </button>
-                    </div>
-
-                    {/* New category form */}
-                    {showNewCat && (
-                        <div style={{
-                            padding: 12, background: 'var(--bg-input)', borderRadius: 12,
-                            marginBottom: 8
-                        }}>
-                            <input
-                                type="text"
-                                value={newCatName}
-                                onChange={(e) => setNewCatName(e.target.value)}
-                                placeholder="Kategori adı..."
-                                className="input-field"
-                                style={{ marginBottom: 8, fontSize: 13 }}
-                                onKeyDown={(e) => e.key === 'Enter' && handleCreateCategory()}
-                                autoFocus
-                            />
-                            <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
-                                {PRESET_COLORS.map(c => (
-                                    <button
-                                        key={c}
-                                        onClick={() => setNewCatColor(c)}
-                                        style={{
-                                            width: 24, height: 24, borderRadius: 8, background: c, border: 'none',
-                                            cursor: 'pointer',
-                                            outline: newCatColor === c ? '2px solid var(--text-primary)' : 'none',
-                                            outlineOffset: 2,
-                                        }}
-                                    />
-                                ))}
-                            </div>
-                            <button onClick={handleCreateCategory} className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '8px', fontSize: 13 }}>
-                                Ekle
-                            </button>
-                        </div>
-                    )}
-
-                    {/* Category list */}
+            {/* Categories Filter */}
+            <div style={{ padding: '4px 12px', flexShrink: 0 }}>
+                <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '8px 4px', marginBottom: 4
+                }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>
+                        Kategori Filtresi
+                    </span>
+                </div>
+                <select
+                    value={selectedCategoryId || ""}
+                    onChange={(e) => {
+                        if (e.target.value) {
+                            onSelectCategory(e.target.value);
+                            onViewChange('ideas');
+                        } else {
+                            onSelectCategory(null);
+                        }
+                        onClose();
+                    }}
+                    className="input-field"
+                    style={{ padding: '10px 12px', background: 'var(--bg-input)', border: 'none', borderRadius: 10, color: selectedCategoryId ? 'var(--text-primary)' : 'var(--text-secondary)' }}
+                >
+                    <option value="">💡 Tüm Kategoriler</option>
                     {categories.map(cat => (
-                        <div key={cat.id}>
-                            {editingCat === cat.id ? (
-                                <div style={{ display: 'flex', gap: 4, padding: '4px 0' }}>
-                                    <input
-                                        type="text"
-                                        value={editName}
-                                        onChange={(e) => setEditName(e.target.value)}
-                                        className="input-field"
-                                        style={{ fontSize: 13, padding: '6px 10px' }}
-                                        onKeyDown={(e) => e.key === 'Enter' && handleUpdateCategory(cat.id)}
-                                        autoFocus
-                                    />
-                                    <button onClick={() => handleUpdateCategory(cat.id)} className="btn-ghost" style={{ padding: '4px 8px' }}>✓</button>
-                                    <button onClick={() => setEditingCat(null)} className="btn-ghost" style={{ padding: '4px 8px' }}>✕</button>
-                                </div>
-                            ) : (
-                                <button
-                                    onClick={() => { onViewChange('ideas'); onSelectCategory(cat.id); onClose(); }}
-                                    className="btn-ghost group"
-                                    style={{
-                                        width: '100%', justifyContent: 'flex-start', padding: '8px 12px',
-                                        borderRadius: 10,
-                                        background: selectedCategoryId === cat.id && activeView === 'ideas' ? 'var(--bg-hover)' : 'transparent',
-                                        fontWeight: selectedCategoryId === cat.id ? 600 : 400,
-                                        position: 'relative',
-                                    }}
-                                >
-                                    <span style={{
-                                        width: 10, height: 10, borderRadius: 4,
-                                        background: cat.color, flexShrink: 0,
-                                    }} />
-                                    <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                        {cat.name}
-                                    </span>
-                                    <span style={{
-                                        fontSize: 11, color: 'var(--text-muted)', fontWeight: 500,
-                                    }}>
-                                        {ideaCounts[cat.id] || 0}
-                                    </span>
-                                    <span
-                                        onClick={(e) => { e.stopPropagation(); setEditingCat(cat.id); setEditName(cat.name); }}
-                                        style={{ fontSize: 12, opacity: 0.5, cursor: 'pointer', padding: '0 2px' }}
-                                        title="Düzenle"
-                                    >
-                                        ✏️
-                                    </span>
-                                    <span
-                                        onClick={(e) => { e.stopPropagation(); setCatToDelete(cat); }}
-                                        style={{ fontSize: 12, opacity: 0.5, cursor: 'pointer', padding: '0 2px' }}
-                                        title="Sil"
-                                    >
-                                        🗑️
-                                    </span>
-                                </button>
-                            )}
-                        </div>
+                        <option key={cat.id} value={cat.id}>{cat.name}</option>
                     ))}
+                </select>
+            </div>
 
-                    {categories.length === 0 && !showNewCat && (
-                        <p style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 12px', textAlign: 'center' }}>
-                            Henüz kategori yok
+            {/* Idea List (Chat History Style) */}
+            {activeView !== 'settings' && (
+                <div style={{ padding: '12px', borderTop: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '12px' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: '8px', paddingLeft: '4px' }}>
+                        Geçmiş Fikirler
+                    </div>
+                    {filteredIdeasForSidebar.map(idea => (
+                        <button
+                            key={idea.id}
+                            onClick={() => { if (onSelectIdea) onSelectIdea(idea.id); onClose(); }}
+                            style={{
+                                width: '100%', textAlign: 'left', padding: '10px 12px',
+                                borderRadius: '10px', border: 'none', cursor: 'pointer',
+                                background: selectedIdeaId === idea.id ? 'var(--bg-hover)' : 'transparent',
+                                color: selectedIdeaId === idea.id ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                fontWeight: selectedIdeaId === idea.id ? 600 : 500,
+                                fontSize: '14px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+                            }}
+                        >
+                            {idea.title || 'İsimsiz Fikir'}
+                        </button>
+                    ))}
+                    {filteredIdeasForSidebar.length === 0 && (
+                        <p style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', marginTop: 20 }}>
+                            Bu alanda fikir bulunamadı.
                         </p>
                     )}
                 </div>
-
-                {/* Idea List (Chat History Style) */}
-                {activeView !== 'settings' && (
-                    <div style={{ flex: 1, overflowY: 'auto', padding: '12px', borderTop: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '4px' }} className="scrollbar-thin">
-                        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: '8px', paddingLeft: '4px' }}>
-                            Geçmiş Fikirler
-                        </div>
-                        {filteredIdeasForSidebar.map(idea => (
-                            <button
-                                key={idea.id}
-                                onClick={() => { if (onSelectIdea) onSelectIdea(idea.id); onClose(); }}
-                                style={{
-                                    width: '100%', textAlign: 'left', padding: '10px 12px',
-                                    borderRadius: '10px', border: 'none', cursor: 'pointer',
-                                    background: selectedIdeaId === idea.id ? 'var(--bg-hover)' : 'transparent',
-                                    color: selectedIdeaId === idea.id ? 'var(--text-primary)' : 'var(--text-secondary)',
-                                    fontWeight: selectedIdeaId === idea.id ? 600 : 500,
-                                    fontSize: '14px',
-                                    display: 'flex', flexDirection: 'column', gap: '4px'
-                                }}
-                            >
-                                <span style={{
-                                    display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical',
-                                    overflow: 'hidden', textOverflow: 'ellipsis'
-                                }}>
-                                    {idea.title || 'İsimsiz Fikir'}
-                                </span>
-                                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                                    {new Date(idea.createdAt).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })}
-                                </span>
-                            </button>
-                        ))}
-                        {filteredIdeasForSidebar.length === 0 && (
-                            <p style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', marginTop: 20 }}>
-                                Bu alanda fikir bulunamadı.
-                            </p>
-                        )}
-                    </div>
-                )}
-            </div>
+            )}
 
             {/* Logout */}
             {onLogout && (
-                <div style={{ padding: '12px', borderTop: '1px solid var(--border-color)' }}>
+                <div style={{ padding: '12px', marginTop: 'auto', borderTop: '1px solid var(--border-color)' }}>
                     <button
                         onClick={() => setIsLogoutPromptOpen(true)}
                         className="btn-ghost"
@@ -443,15 +310,6 @@ export default function Sidebar({
                     </button>
                 </div>
             )}
-
-            <ConfirmModal
-                isOpen={!!catToDelete}
-                title="Kategoriyi Sil"
-                message={`"${catToDelete?.name}" kategorisini silmek istediğinize emin misiniz? İçindeki fikirler kategorisiz olarak kalacaktır.`}
-                onConfirm={() => { if (catToDelete) handleDeleteCategory(catToDelete.id); setCatToDelete(null); }}
-                onCancel={() => setCatToDelete(null)}
-                confirmText="Sil"
-            />
 
             <ConfirmModal
                 isOpen={isLogoutPromptOpen}

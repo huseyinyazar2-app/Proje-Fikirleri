@@ -2,11 +2,47 @@
 
 import React, { useState, useEffect } from 'react';
 import * as store from '@/lib/store';
-import { AppSettings } from '@/lib/types';
+import { AppSettings, Category } from '@/lib/types';
 import toast from 'react-hot-toast';
 
-export default function Settings() {
+export default function Settings({ categories = [], onSettingsUpdated }: { categories?: Category[], onSettingsUpdated?: () => void }) {
     const [settings, setSettings] = useState<AppSettings>({ theme: 'light' });
+
+    // Category Management
+    const [newCatName, setNewCatName] = useState('');
+    const [newCatColor, setNewCatColor] = useState('#6366f1');
+    const [editingCat, setEditingCat] = useState<string | null>(null);
+    const [editName, setEditName] = useState('');
+
+    const PRESET_COLORS = [
+        '#ef4444', '#f97316', '#eab308', '#22c55e',
+        '#14b8a6', '#0ea5e9', '#3b82f6', '#6366f1',
+        '#8b5cf6', '#d946ef', '#ec4899', '#78716c',
+    ];
+
+    const handleCreateCategory = async () => {
+        if (!newCatName.trim()) return;
+        await store.createCategory(newCatName.trim(), newCatColor);
+        setNewCatName('');
+        setNewCatColor('#6366f1');
+        if (onSettingsUpdated) onSettingsUpdated();
+        toast.success("Kategori eklendi");
+    };
+
+    const handleUpdateCategory = async (id: string) => {
+        if (!editName.trim()) return;
+        await store.updateCategory(id, { name: editName.trim() });
+        setEditingCat(null);
+        if (onSettingsUpdated) onSettingsUpdated();
+        toast.success("Kategori güncellendi");
+    };
+
+    const handleDeleteCategory = async (id: string, name: string) => {
+        if (!window.confirm(`"${name}" kategorisini silmek istediğinize emin misiniz? İçindeki fikirler kategorisiz olarak kalacaktır.`)) return;
+        await store.deleteCategory(id);
+        if (onSettingsUpdated) onSettingsUpdated();
+        toast.success("Kategori silindi");
+    };
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -100,6 +136,74 @@ export default function Settings() {
                             🌙 Karanlık
                         </button>
                     </div>
+                </div>
+            </div>
+
+            {/* Category Settings */}
+            <div className="card" style={{ padding: 32, marginBottom: 24 }}>
+                <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid var(--border-color)' }}>
+                    📂 Kategori Yönetimi
+                </h3>
+
+                <div style={{ padding: 16, background: 'var(--bg-input)', borderRadius: 12, marginBottom: 16 }}>
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                        <input
+                            type="text"
+                            value={newCatName}
+                            onChange={(e) => setNewCatName(e.target.value)}
+                            placeholder="Yeni kategori adı..."
+                            className="input-field"
+                            style={{ flex: 1 }}
+                            onKeyDown={(e) => e.key === 'Enter' && handleCreateCategory()}
+                        />
+                        <button onClick={handleCreateCategory} className="btn-primary" style={{ padding: '8px 20px' }}>
+                            Ekle
+                        </button>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {PRESET_COLORS.map(c => (
+                            <button
+                                key={c}
+                                onClick={() => setNewCatColor(c)}
+                                style={{
+                                    width: 28, height: 28, borderRadius: 8, background: c, border: 'none',
+                                    cursor: 'pointer',
+                                    outline: newCatColor === c ? '2px solid var(--text-primary)' : 'none',
+                                    outlineOffset: 2,
+                                }}
+                            />
+                        ))}
+                    </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {categories.map(cat => (
+                        <div key={cat.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: 12 }}>
+                            {editingCat === cat.id ? (
+                                <>
+                                    <input
+                                        type="text"
+                                        value={editName}
+                                        onChange={(e) => setEditName(e.target.value)}
+                                        className="input-field"
+                                        style={{ flex: 1, padding: '8px 12px' }}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleUpdateCategory(cat.id)}
+                                        autoFocus
+                                    />
+                                    <button onClick={() => handleUpdateCategory(cat.id)} className="btn-secondary" style={{ padding: '6px 12px' }}>Kaydet</button>
+                                    <button onClick={() => setEditingCat(null)} className="btn-ghost" style={{ padding: '6px 12px' }}>İptal</button>
+                                </>
+                            ) : (
+                                <>
+                                    <div style={{ width: 14, height: 14, borderRadius: 4, background: cat.color }} />
+                                    <span style={{ flex: 1, fontWeight: 500 }}>{cat.name}</span>
+                                    <button onClick={() => { setEditingCat(cat.id); setEditName(cat.name); }} className="btn-ghost" style={{ padding: '6px 10px' }}>Düzenle</button>
+                                    <button onClick={() => handleDeleteCategory(cat.id, cat.name)} className="btn-ghost" style={{ padding: '6px 10px', color: '#ef4444' }}>Sil</button>
+                                </>
+                            )}
+                        </div>
+                    ))}
+                    {categories.length === 0 && <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Henüz kategori eklenmedi.</p>}
                 </div>
             </div>
 
