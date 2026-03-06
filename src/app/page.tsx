@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
-import Settings from '@/app/settings/page';
+import SettingsPanel from '@/components/SettingsPanel';
 import LoginPage from '@/components/LoginPage';
 import * as store from '@/lib/store';
 import { Category, Idea, ProjectProgress } from '@/lib/types';
@@ -237,7 +237,7 @@ export default function Dashboard() {
 
         {view === 'settings' ? (
           <div style={{ padding: '28px', maxWidth: 1200, margin: '0 auto', overflowY: 'auto', flex: 1 }} className="scrollbar-thin">
-            <Settings onSettingsUpdated={loadData} categories={categories} />
+            <SettingsPanel onSettingsUpdated={loadData} categories={categories} />
           </div>
         ) : selectedIdeaObj ? (
           // AI Chat-Style Idea Details View
