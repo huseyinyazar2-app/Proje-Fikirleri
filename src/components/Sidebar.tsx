@@ -2,15 +2,18 @@
 
 import React, { useState, useEffect } from 'react';
 import { useTheme } from './ThemeProvider';
-import { Category } from '@/lib/types';
+import { Category, Idea } from '@/lib/types';
 import * as store from '@/lib/store';
 import ConfirmModal from '@/components/ConfirmModal';
 
 interface SidebarProps {
     categories: Category[];
+    ideas?: Idea[];
     selectedCategoryId: string | null;
+    selectedIdeaId?: string | null;
     activeView: 'ideas' | 'projects' | 'completed' | 'deleted' | 'settings';
     onSelectCategory: (id: string | null) => void;
+    onSelectIdea?: (id: string | null) => void;
     onViewChange: (view: 'ideas' | 'projects' | 'completed' | 'deleted' | 'settings') => void;
     onCategoriesChange: () => void;
     isOpen: boolean;
@@ -20,9 +23,12 @@ interface SidebarProps {
 
 export default function Sidebar({
     categories,
+    ideas = [],
     selectedCategoryId,
+    selectedIdeaId,
     activeView,
     onSelectCategory,
+    onSelectIdea,
     onViewChange,
     onCategoriesChange,
     isOpen,
@@ -45,13 +51,13 @@ export default function Sidebar({
 
     useEffect(() => {
         const loadCounts = async () => {
-            const ideas = await store.getIdeas();
-            setTotalIdeas(ideas.filter(i => i.status === 'idea').length);
-            setProjectCount(ideas.filter(i => i.status === 'in_progress').length);
-            setCompletedCount(ideas.filter(i => i.status === 'completed').length);
-            setDeletedCount(ideas.filter(i => i.status === 'deleted').length);
+            const allIdeas = ideas.length > 0 ? ideas : await store.getIdeas();
+            setTotalIdeas(allIdeas.filter(i => i.status === 'idea').length);
+            setProjectCount(allIdeas.filter(i => i.status === 'in_progress').length);
+            setCompletedCount(allIdeas.filter(i => i.status === 'completed').length);
+            setDeletedCount(allIdeas.filter(i => i.status === 'deleted').length);
             const counts: Record<string, number> = {};
-            ideas.forEach(i => {
+            allIdeas.forEach(i => {
                 if (i.categoryId) {
                     counts[i.categoryId] = (counts[i.categoryId] || 0) + 1;
                 }
@@ -59,7 +65,20 @@ export default function Sidebar({
             setIdeaCounts(counts);
         };
         loadCounts();
-    }, [categories]);
+    }, [categories, ideas]);
+
+    // Derived Ideas for Chat List
+    const filteredIdeasForSidebar = ideas.filter(idea => {
+        if (activeView === 'projects') return idea.status === 'in_progress';
+        if (activeView === 'completed') return idea.status === 'completed';
+        if (activeView === 'deleted') return idea.status === 'deleted';
+        if (activeView === 'ideas') {
+            if (idea.status === 'deleted' || idea.status === 'completed') return false;
+            if (selectedCategoryId && idea.categoryId !== selectedCategoryId) return false;
+            return true;
+        }
+        return false;
+    });
 
     const handleCreateCategory = async () => {
         if (!newCatName.trim()) return;
@@ -246,124 +265,165 @@ export default function Sidebar({
                 </button>
             </nav>
 
-            {/* Categories */}
-            <div style={{ padding: '4px 12px', flex: 1 }}>
-                <div style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '8px 4px', marginBottom: 4
-                }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>
-                        Kategoriler
-                    </span>
-                    <button
-                        onClick={() => setShowNewCat(!showNewCat)}
-                        className="btn-ghost"
-                        style={{ padding: '4px 8px', fontSize: 16 }}
-                    >
-                        {showNewCat ? '✕' : '+'}
-                    </button>
-                </div>
-
-                {/* New category form */}
-                {showNewCat && (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                {/* Categories */}
+                <div style={{ padding: '4px 12px', flexShrink: 0 }}>
                     <div style={{
-                        padding: 12, background: 'var(--bg-input)', borderRadius: 12,
-                        marginBottom: 8
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '8px 4px', marginBottom: 4
                     }}>
-                        <input
-                            type="text"
-                            value={newCatName}
-                            onChange={(e) => setNewCatName(e.target.value)}
-                            placeholder="Kategori adı..."
-                            className="input-field"
-                            style={{ marginBottom: 8, fontSize: 13 }}
-                            onKeyDown={(e) => e.key === 'Enter' && handleCreateCategory()}
-                            autoFocus
-                        />
-                        <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
-                            {PRESET_COLORS.map(c => (
-                                <button
-                                    key={c}
-                                    onClick={() => setNewCatColor(c)}
-                                    style={{
-                                        width: 24, height: 24, borderRadius: 8, background: c, border: 'none',
-                                        cursor: 'pointer',
-                                        outline: newCatColor === c ? '2px solid var(--text-primary)' : 'none',
-                                        outlineOffset: 2,
-                                    }}
-                                />
-                            ))}
-                        </div>
-                        <button onClick={handleCreateCategory} className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '8px', fontSize: 13 }}>
-                            Ekle
+                        <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>
+                            Kategoriler
+                        </span>
+                        <button
+                            onClick={() => setShowNewCat(!showNewCat)}
+                            className="btn-ghost"
+                            style={{ padding: '4px 8px', fontSize: 16 }}
+                        >
+                            {showNewCat ? '✕' : '+'}
                         </button>
                     </div>
-                )}
 
-                {/* Category list */}
-                {categories.map(cat => (
-                    <div key={cat.id}>
-                        {editingCat === cat.id ? (
-                            <div style={{ display: 'flex', gap: 4, padding: '4px 0' }}>
-                                <input
-                                    type="text"
-                                    value={editName}
-                                    onChange={(e) => setEditName(e.target.value)}
-                                    className="input-field"
-                                    style={{ fontSize: 13, padding: '6px 10px' }}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleUpdateCategory(cat.id)}
-                                    autoFocus
-                                />
-                                <button onClick={() => handleUpdateCategory(cat.id)} className="btn-ghost" style={{ padding: '4px 8px' }}>✓</button>
-                                <button onClick={() => setEditingCat(null)} className="btn-ghost" style={{ padding: '4px 8px' }}>✕</button>
+                    {/* New category form */}
+                    {showNewCat && (
+                        <div style={{
+                            padding: 12, background: 'var(--bg-input)', borderRadius: 12,
+                            marginBottom: 8
+                        }}>
+                            <input
+                                type="text"
+                                value={newCatName}
+                                onChange={(e) => setNewCatName(e.target.value)}
+                                placeholder="Kategori adı..."
+                                className="input-field"
+                                style={{ marginBottom: 8, fontSize: 13 }}
+                                onKeyDown={(e) => e.key === 'Enter' && handleCreateCategory()}
+                                autoFocus
+                            />
+                            <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
+                                {PRESET_COLORS.map(c => (
+                                    <button
+                                        key={c}
+                                        onClick={() => setNewCatColor(c)}
+                                        style={{
+                                            width: 24, height: 24, borderRadius: 8, background: c, border: 'none',
+                                            cursor: 'pointer',
+                                            outline: newCatColor === c ? '2px solid var(--text-primary)' : 'none',
+                                            outlineOffset: 2,
+                                        }}
+                                    />
+                                ))}
                             </div>
-                        ) : (
+                            <button onClick={handleCreateCategory} className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '8px', fontSize: 13 }}>
+                                Ekle
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Category list */}
+                    {categories.map(cat => (
+                        <div key={cat.id}>
+                            {editingCat === cat.id ? (
+                                <div style={{ display: 'flex', gap: 4, padding: '4px 0' }}>
+                                    <input
+                                        type="text"
+                                        value={editName}
+                                        onChange={(e) => setEditName(e.target.value)}
+                                        className="input-field"
+                                        style={{ fontSize: 13, padding: '6px 10px' }}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleUpdateCategory(cat.id)}
+                                        autoFocus
+                                    />
+                                    <button onClick={() => handleUpdateCategory(cat.id)} className="btn-ghost" style={{ padding: '4px 8px' }}>✓</button>
+                                    <button onClick={() => setEditingCat(null)} className="btn-ghost" style={{ padding: '4px 8px' }}>✕</button>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={() => { onViewChange('ideas'); onSelectCategory(cat.id); onClose(); }}
+                                    className="btn-ghost group"
+                                    style={{
+                                        width: '100%', justifyContent: 'flex-start', padding: '8px 12px',
+                                        borderRadius: 10,
+                                        background: selectedCategoryId === cat.id && activeView === 'ideas' ? 'var(--bg-hover)' : 'transparent',
+                                        fontWeight: selectedCategoryId === cat.id ? 600 : 400,
+                                        position: 'relative',
+                                    }}
+                                >
+                                    <span style={{
+                                        width: 10, height: 10, borderRadius: 4,
+                                        background: cat.color, flexShrink: 0,
+                                    }} />
+                                    <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {cat.name}
+                                    </span>
+                                    <span style={{
+                                        fontSize: 11, color: 'var(--text-muted)', fontWeight: 500,
+                                    }}>
+                                        {ideaCounts[cat.id] || 0}
+                                    </span>
+                                    <span
+                                        onClick={(e) => { e.stopPropagation(); setEditingCat(cat.id); setEditName(cat.name); }}
+                                        style={{ fontSize: 12, opacity: 0.5, cursor: 'pointer', padding: '0 2px' }}
+                                        title="Düzenle"
+                                    >
+                                        ✏️
+                                    </span>
+                                    <span
+                                        onClick={(e) => { e.stopPropagation(); setCatToDelete(cat); }}
+                                        style={{ fontSize: 12, opacity: 0.5, cursor: 'pointer', padding: '0 2px' }}
+                                        title="Sil"
+                                    >
+                                        🗑️
+                                    </span>
+                                </button>
+                            )}
+                        </div>
+                    ))}
+
+                    {categories.length === 0 && !showNewCat && (
+                        <p style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 12px', textAlign: 'center' }}>
+                            Henüz kategori yok
+                        </p>
+                    )}
+                </div>
+
+                {/* Idea List (Chat History Style) */}
+                {activeView !== 'settings' && (
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '12px', borderTop: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '4px' }} className="scrollbar-thin">
+                        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: '8px', paddingLeft: '4px' }}>
+                            Geçmiş Fikirler
+                        </div>
+                        {filteredIdeasForSidebar.map(idea => (
                             <button
-                                onClick={() => { onViewChange('ideas'); onSelectCategory(cat.id); onClose(); }}
-                                className="btn-ghost group"
+                                key={idea.id}
+                                onClick={() => { if (onSelectIdea) onSelectIdea(idea.id); onClose(); }}
                                 style={{
-                                    width: '100%', justifyContent: 'flex-start', padding: '8px 12px',
-                                    borderRadius: 10,
-                                    background: selectedCategoryId === cat.id && activeView === 'ideas' ? 'var(--bg-hover)' : 'transparent',
-                                    fontWeight: selectedCategoryId === cat.id ? 600 : 400,
-                                    position: 'relative',
+                                    width: '100%', textAlign: 'left', padding: '10px 12px',
+                                    borderRadius: '10px', border: 'none', cursor: 'pointer',
+                                    background: selectedIdeaId === idea.id ? 'var(--bg-hover)' : 'transparent',
+                                    color: selectedIdeaId === idea.id ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                    fontWeight: selectedIdeaId === idea.id ? 600 : 500,
+                                    fontSize: '14px',
+                                    display: 'flex', flexDirection: 'column', gap: '4px'
                                 }}
                             >
                                 <span style={{
-                                    width: 10, height: 10, borderRadius: 4,
-                                    background: cat.color, flexShrink: 0,
-                                }} />
-                                <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {cat.name}
-                                </span>
-                                <span style={{
-                                    fontSize: 11, color: 'var(--text-muted)', fontWeight: 500,
+                                    display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical',
+                                    overflow: 'hidden', textOverflow: 'ellipsis'
                                 }}>
-                                    {ideaCounts[cat.id] || 0}
+                                    {idea.title || 'İsimsiz Fikir'}
                                 </span>
-                                <span
-                                    onClick={(e) => { e.stopPropagation(); setEditingCat(cat.id); setEditName(cat.name); }}
-                                    style={{ fontSize: 12, opacity: 0.5, cursor: 'pointer', padding: '0 2px' }}
-                                    title="Düzenle"
-                                >
-                                    ✏️
-                                </span>
-                                <span
-                                    onClick={(e) => { e.stopPropagation(); setCatToDelete(cat); }}
-                                    style={{ fontSize: 12, opacity: 0.5, cursor: 'pointer', padding: '0 2px' }}
-                                    title="Sil"
-                                >
-                                    🗑️
+                                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                    {new Date(idea.createdAt).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })}
                                 </span>
                             </button>
+                        ))}
+                        {filteredIdeasForSidebar.length === 0 && (
+                            <p style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', marginTop: 20 }}>
+                                Bu alanda fikir bulunamadı.
+                            </p>
                         )}
                     </div>
-                ))}
-
-                {categories.length === 0 && !showNewCat && (
-                    <p style={{ fontSize: 12, color: 'var(--text-muted)', padding: '8px 12px', textAlign: 'center' }}>
-                        Henüz kategori yok
-                    </p>
                 )}
             </div>
 

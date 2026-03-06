@@ -1,33 +1,40 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { DndContext, closestCenter, KeyboardSensor, MouseSensor, TouchSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
-import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import IdeaCard from '@/components/IdeaCard';
-import IdeaModal from '@/components/IdeaModal';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
 import Settings from '@/app/settings/page';
 import LoginPage from '@/components/LoginPage';
 import * as store from '@/lib/store';
 import { Category, Idea, ProjectProgress } from '@/lib/types';
 import toast from 'react-hot-toast';
-
 import { useRouter } from 'next/navigation';
+import { useReactToPrint } from 'react-to-print';
 
 export default function Dashboard() {
   const router = useRouter();
   const [view, setView] = useState<'ideas' | 'projects' | 'completed' | 'deleted' | 'settings'>('ideas');
   const [categories, setCategories] = useState<Category[]>([]);
   const [ideas, setIdeas] = useState<Idea[]>([]);
-  const [progressMap, setProgressMap] = useState<Record<string, ProjectProgress[]>>({});
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
+  const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
-
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [selectedIdea, setSelectedIdea] = useState<Idea | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // New Idea Form State
+  const [newIdeaTitle, setNewIdeaTitle] = useState('');
+  const [newIdeaDesc, setNewIdeaDesc] = useState('');
+  const [newIdeaCat, setNewIdeaCat] = useState('');
+
+  // Append Note State
+  const [noteText, setNoteText] = useState('');
+
+  // Print Ref
+  const printRef = useRef<HTMLDivElement>(null);
+  // Type assertion handles the ref type appropriately for react-to-print
+  const handlePrint = useReactToPrint({ contentRef: printRef as unknown as React.RefObject<HTMLDivElement> });
 
   const loadData = useCallback(async () => {
     try {
@@ -36,20 +43,8 @@ export default function Dashboard() {
         store.getIdeas(),
       ]);
       setCategories(cats);
-      const sorted = allIdeas.sort((a, b) => a.order - b.order);
+      const sorted = allIdeas.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       setIdeas(sorted);
-
-      // Load progress for in_progress ideas (shown on cards)
-      const inProgressIds = sorted.filter(i => i.status === 'in_progress').map(i => i.id);
-      const progressEntries = await Promise.all(
-        inProgressIds.map(async (id) => {
-          const prog = await store.getProgressByIdea(id);
-          return [id, prog] as [string, ProjectProgress[]];
-        })
-      );
-      const pMap: Record<string, ProjectProgress[]> = {};
-      progressEntries.forEach(([id, prog]) => { pMap[id] = prog; });
-      setProgressMap(pMap);
     } catch (err) {
       console.error('Data loading failed:', err);
       toast.error('Veri yüklenirken hata oluştu');
@@ -92,74 +87,70 @@ export default function Dashboard() {
     window.location.reload();
   };
 
-  const sensors = useSensors(
-    useSensor(MouseSensor, {
-      activationConstraint: {
-        distance: 5,
-      },
-    }),
-    useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 250,
-        tolerance: 5,
-      },
-    }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
+  const handleSaveIdea = async () => {
+    if (!newIdeaTitle.trim()) { toast.error('Başlık zorunludur'); return; }
 
-  const handleDragEnd = async (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (over && active.id !== over.id) {
-      setIdeas((items) => {
-        const oldIndex = items.findIndex((i) => i.id === active.id);
-        const newIndex = items.findIndex((i) => i.id === over.id);
-        const newArray = arrayMove(items, oldIndex, newIndex);
-        store.reorderIdeas(newArray.map(i => i.id));
-        return newArray;
-      });
-    }
+    await store.createIdea({
+      title: newIdeaTitle,
+      description: newIdeaDesc,
+      categoryId: newIdeaCat || null
+    });
+    setNewIdeaTitle(''); setNewIdeaDesc(''); setNewIdeaCat('');
+    toast.success('Fikir başarıyla oluşturuldu!');
+    await loadData();
   };
 
-  const handleSaveIdea = async (data: Partial<Idea>) => {
-    await store.createIdea({ ...data, categoryId: selectedCatId });
-    await loadData();
-    setIsModalOpen(false);
-    toast.success('Yeni fikir eklendi!');
-  };
+  const handleAppendNote = async () => {
+    if (!noteText.trim() || !selectedIdeaId) return;
+    const idea = ideas.find(i => i.id === selectedIdeaId);
+    if (!idea) return;
 
-  const handleDeleteIdea = async (id: string) => {
-    const ideaToDel = ideas.find(i => i.id === id);
-    if (ideaToDel?.status === 'deleted') {
-      await store.hardDeleteIdea(id);
-      toast.success('Fikir tamamen silindi');
-    } else {
-      await store.deleteIdea(id);
-      toast.success('Çöp kutusuna taşındı');
-    }
+    const dateStr = new Date().toLocaleString('tr-TR', {
+      year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
+    });
+
+    // Yazarın istediği tam format
+    const appendedText = `\n\n----------------------------------------\nTarih: ${dateStr}\nNot: ${noteText.trim()}`;
+    const newDesc = (idea.description || '') + appendedText;
+
+    await store.updateIdea(idea.id, { description: newDesc });
+    setNoteText('');
+    toast.success('Not eklendi');
     await loadData();
-    if (selectedIdea?.id === id) {
-      setIsModalOpen(false);
-      setSelectedIdea(null);
-    }
   };
 
   const handleStatusChange = async (id: string, status: Idea['status']) => {
-    if (status === 'completed') {
-      router.push(`/idea/${id}`);
-      return;
-    }
     await store.updateIdea(id, { status });
     await loadData();
-    toast.success(status === 'in_progress' ? 'Projeye başlandı! 🚀' : 'Durum güncellendi');
+    toast.success('Durum güncellendi');
   };
 
-  // Filter logic
+  const handleDeleteIdea = async (id: string, isHardDelete: boolean) => {
+    if (isHardDelete) {
+      if (window.confirm('Kalıcı olarak silmek istediğinize emin misiniz?')) {
+        await store.hardDeleteIdea(id);
+        toast.success('Kalıcı olarak silindi');
+      } else return;
+    } else {
+      if (window.confirm('Çöp kutusuna taşınsın mı?')) {
+        await store.updateIdea(id, { status: 'deleted' });
+        toast.success('Çöpe taşındı');
+      } else return;
+    }
+
+    setSelectedIdeaId(null);
+    await loadData();
+  };
+
+  const selectedIdeaObj = ideas.find(i => i.id === selectedIdeaId);
+
+  // Filter logic for counts in the header
   const filteredIdeas = ideas.filter(idea => {
     if (view === 'projects') return idea.status === 'in_progress';
     if (view === 'completed') return idea.status === 'completed';
     if (view === 'deleted') return idea.status === 'deleted';
     if (view === 'ideas') {
-      if (idea.status === 'deleted') return false;
+      if (idea.status === 'deleted' || idea.status === 'completed') return false;
       if (selectedCatId && idea.categoryId !== selectedCatId) return false;
       return true;
     }
@@ -195,18 +186,21 @@ export default function Dashboard() {
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden' }}>
       <Sidebar
+        ideas={ideas}
         categories={categories}
         selectedCategoryId={selectedCatId}
+        selectedIdeaId={selectedIdeaId}
         activeView={view}
-        onSelectCategory={setSelectedCatId}
-        onViewChange={setView}
+        onSelectCategory={(id) => { setSelectedCatId(id); setSelectedIdeaId(null); }}
+        onSelectIdea={(id) => setSelectedIdeaId(id)}
+        onViewChange={(v) => { setView(v); setSelectedIdeaId(null); }}
         onCategoriesChange={loadData}
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onLogout={handleLogout}
       />
 
-      <main style={{ flex: 1, height: '100%', overflowY: 'auto', position: 'relative', background: 'var(--bg-app)' }} className="scrollbar-thin">
+      <main style={{ flex: 1, height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', background: 'var(--bg-app)' }}>
         {/* Header Bar */}
         <div style={{
           display: 'flex', alignItems: 'center', padding: '18px 28px',
@@ -239,118 +233,92 @@ export default function Dashboard() {
                     view === 'deleted' ? `${filteredIdeas.length} silinmiş` : ''}
             </p>
           </div>
-
-          {view === 'ideas' && (
-            <button
-              onClick={() => { setSelectedIdea(null); setIsModalOpen(true); }}
-              className="btn-primary"
-              style={{ padding: '10px 24px' }}
-            >
-              ✨ Yeni Fikir
-            </button>
-          )}
         </div>
 
-        {/* Content Area */}
-        <div style={{ padding: '28px', maxWidth: 1200, margin: '0 auto' }}>
-          {view === 'settings' && <Settings />}
-
-          {view !== 'settings' && (
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              {view === 'ideas' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 40 }}>
-                  {filteredIdeas.length > 0 && ['idea', 'in_progress', 'completed'].map(statusGroup => {
-                    const groupIdeas = filteredIdeas.filter(i => i.status === statusGroup);
-                    if (groupIdeas.length === 0) return null;
-
-                    const titles: any = { idea: '💡 Fikirler', in_progress: '🚀 Devam Eden Projeler', completed: '✅ Tamamlananlar' };
-                    const colors: any = { idea: 'var(--color-primary-500)', in_progress: '#f59e0b', completed: '#10b981' };
-
-                    return (
-                      <div key={statusGroup} className="animate-slide-in">
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, paddingLeft: 16, position: 'relative' }}>
-                          <div style={{ position: 'absolute', left: 0, top: 2, bottom: 2, width: 4, borderRadius: 2, background: colors[statusGroup] }} />
-                          <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-                            {titles[statusGroup]}
-                          </h3>
-                          <span style={{
-                            fontSize: 12, color: 'white', fontWeight: 700,
-                            background: colors[statusGroup], padding: '2px 10px',
-                            borderRadius: 20,
-                          }}>
-                            {groupIdeas.length}
-                          </span>
-                        </div>
-                        <div style={{
-                          display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 20,
-                        }}>
-                          <SortableContext items={groupIdeas.map(i => i.id)} strategy={verticalListSortingStrategy}>
-                            {groupIdeas.map((idea) => {
-                              const category = categories.find(c => c.id === idea.categoryId);
-                              return (
-                                <IdeaCard
-                                  key={idea.id} idea={idea} categoryColor={category?.color} progress={progressMap[idea.id] || []}
-                                  onClick={() => router.push(`/idea/${idea.id}`)} onStatusChange={handleStatusChange} onDelete={handleDeleteIdea}
-                                />
-                              );
-                            })}
-                          </SortableContext>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+        {view === 'settings' ? (
+          <div style={{ padding: '28px', maxWidth: 1200, margin: '0 auto', overflowY: 'auto', flex: 1 }} className="scrollbar-thin">
+            <Settings />
+          </div>
+        ) : selectedIdeaObj ? (
+          // AI Chat-Style Idea Details View
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', maxWidth: '800px', margin: '0 auto', width: '100%' }}>
+            <div style={{ padding: '16px 24px', display: 'flex', justifyContent: 'flex-end', borderBottom: '1px solid var(--border-color)', gap: '12px' }}>
+              <button onClick={handlePrint as () => void} className="btn-secondary" style={{ padding: '8px 16px', fontSize: 13 }}>📄 PDF İndir</button>
+              {selectedIdeaObj.status === 'deleted' ? (
+                <button onClick={() => handleDeleteIdea(selectedIdeaObj.id, true)} className="btn-danger" style={{ padding: '8px 16px', fontSize: 13 }}>Kalıcı Sil</button>
               ) : (
-                <div style={{
-                  display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 20,
-                }}>
-                  <SortableContext items={filteredIdeas.map(i => i.id)} strategy={verticalListSortingStrategy}>
-                    {filteredIdeas.map((idea) => {
-                      const category = categories.find(c => c.id === idea.categoryId);
-                      return (
-                        <IdeaCard
-                          key={idea.id} idea={idea} categoryColor={category?.color} progress={progressMap[idea.id] || []}
-                          onClick={() => router.push(`/idea/${idea.id}`)} onStatusChange={handleStatusChange} onDelete={handleDeleteIdea}
-                        />
-                      );
-                    })}
-                  </SortableContext>
-                </div>
+                <>
+                  <button onClick={() => handleDeleteIdea(selectedIdeaObj.id, false)} className="btn-secondary" style={{ padding: '8px 16px', fontSize: 13, color: '#ef4444' }}>Çöpe At</button>
+                  {selectedIdeaObj.status !== 'completed' && <button onClick={() => handleStatusChange(selectedIdeaObj.id, 'completed')} className="btn-primary" style={{ padding: '8px 16px', fontSize: 13, background: '#10b981' }}>Tamamlandı İşaretle</button>}
+                  {selectedIdeaObj.status === 'idea' && <button onClick={() => handleStatusChange(selectedIdeaObj.id, 'in_progress')} className="btn-primary" style={{ padding: '8px 16px', fontSize: 13 }}>Projeye Başla</button>}
+                </>
               )}
+            </div>
 
-              {filteredIdeas.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '80px 20px' }}>
-                  <div style={{ fontSize: 56, marginBottom: 20 }} className="animate-float">
-                    {view === 'projects' ? '🚀' : view === 'completed' ? '✅' : view === 'deleted' ? '🗑️' : '🌱'}
-                  </div>
-                  <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8, color: 'var(--text-primary)' }}>Burada henüz bir şey yok</h3>
-                  <p style={{ color: 'var(--text-secondary)', marginBottom: 28, fontSize: 15, maxWidth: 400, margin: '0 auto 28px' }}>
-                    {view === 'projects' ? 'Devam eden projeniz bulunmuyor.' :
-                      view === 'completed' ? 'Henüz tamamlanmış bir proje yok.' :
-                        view === 'deleted' ? 'Çöp kutusu boş, silinmiş fikir yok.' :
-                          'Yeni bir fikir ekleyerek yolculuğunuza başlayın.'}
-                  </p>
-                  {view === 'ideas' && (
-                    <button onClick={() => { setSelectedIdea(null); setIsModalOpen(true); }} className="btn-primary" style={{ padding: '12px 28px' }}>
-                      ✨ Yeni Fikir Ekle
-                    </button>
-                  )}
+            {/* Print content ref */}
+            <div ref={printRef} style={{ flex: 1, overflowY: 'auto', padding: '24px 32px 100px', display: 'flex', flexDirection: 'column', gap: '24px' }} className="scrollbar-thin">
+              <div style={{ borderBottom: '2px solid var(--border-color)', paddingBottom: '16px' }}>
+                <h1 style={{ fontSize: 28, fontWeight: 800, margin: '0 0 8px 0', color: 'var(--text-primary)' }}>{selectedIdeaObj.title}</h1>
+                <div style={{ display: 'flex', gap: '16px', fontSize: 13, color: 'var(--text-secondary)' }}>
+                  <span>{new Date(selectedIdeaObj.createdAt).toLocaleDateString('tr-TR')}</span>
+                  <span>•</span>
+                  <span style={{ textTransform: 'uppercase', fontWeight: 600 }}>{selectedIdeaObj.status === 'completed' ? 'Tamamlandı' : selectedIdeaObj.status === 'in_progress' ? 'Devam Ediyor' : 'Fikir'}</span>
+                  {selectedIdeaObj.categoryId && <span>• {categories.find(c => c.id === selectedIdeaObj.categoryId)?.name}</span>}
                 </div>
-              )}
-            </DndContext>
-          )}
-        </div>
+              </div>
+
+              <div style={{ fontSize: 16, lineHeight: 1.8, color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', background: 'var(--bg-card)', padding: '24px', borderRadius: '12px', border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                {selectedIdeaObj.description || 'Bu proje için henüz açıklama girilmemiş.'}
+              </div>
+            </div>
+
+            {/* Message Input Area (Append Notes) */}
+            <div style={{ padding: '20px 32px', borderTop: '1px solid var(--border-color)', background: 'var(--bg-card)' }}>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-end', background: 'var(--bg-input)', borderRadius: '16px', border: '1px solid var(--border-color)' }}>
+                <textarea
+                  value={noteText}
+                  onChange={e => setNoteText(e.target.value)}
+                  placeholder="Bu projeye yeni bir not veya güncelleme ekle..."
+                  style={{ width: '100%', minHeight: '60px', maxHeight: '200px', background: 'transparent', border: 'none', padding: '16px', fontSize: 15, color: 'var(--text-primary)', outline: 'none', resize: 'none' }}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAppendNote(); } }}
+                />
+                <button onClick={handleAppendNote} className="btn-primary" style={{ margin: '8px', padding: '10px 20px', borderRadius: '12px' }}>Ekle ⬆</button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          // AI Chat-Style "New Idea" Prompt
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, padding: '40px 20px', maxWidth: '700px', margin: '0 auto', width: '100%', height: '100%' }}>
+            <div style={{ width: 64, height: 64, background: 'var(--accent-gradient)', borderRadius: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, marginBottom: 24, boxShadow: '0 8px 24px rgba(99,102,241,0.2)' }}>💡</div>
+            <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8, color: 'var(--text-primary)' }}>Bugün aklında ne var?</h2>
+            <p style={{ color: 'var(--text-muted)', marginBottom: 32, fontSize: 16 }}>Yeni bir proje, uygulama fikri veya tasarım ilhamı gir...</p>
+
+            <div style={{ width: '100%', background: 'var(--bg-card)', padding: '24px', borderRadius: '24px', border: '1px solid var(--border-color)', boxShadow: '0 4px 20px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <input
+                value={newIdeaTitle} onChange={e => setNewIdeaTitle(e.target.value)}
+                className="input-field" placeholder="Projenizin Adı"
+                style={{ fontSize: 18, fontWeight: 600, padding: '16px', background: 'transparent', border: '1px solid var(--border-color)' }}
+              />
+              <select
+                value={newIdeaCat} onChange={e => setNewIdeaCat(e.target.value)}
+                className="input-field"
+                style={{ padding: '12px 16px', background: 'transparent', border: '1px solid var(--border-color)', color: newIdeaCat ? 'var(--text-primary)' : 'var(--text-muted)' }}
+              >
+                <option value="">Kategori Seçin (Opsiyonel)</option>
+                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <textarea
+                value={newIdeaDesc} onChange={e => setNewIdeaDesc(e.target.value)}
+                className="input-field" placeholder="Fikrinizin detaylarını buraya yazın..."
+                style={{ minHeight: '120px', padding: '16px', resize: 'vertical', background: 'transparent', border: '1px solid var(--border-color)' }}
+              />
+              <button onClick={handleSaveIdea} className="btn-primary" style={{ padding: '16px', fontSize: 16, justifyContent: 'center', borderRadius: '12px', marginTop: '8px' }}>
+                Oluştur 🚀
+              </button>
+            </div>
+          </div>
+        )}
       </main>
-
-      {/* Idea Modal */}
-      {isModalOpen && (
-        <IdeaModal
-          categories={categories}
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-          onSave={handleSaveIdea}
-        />
-      )}
     </div>
   );
 }

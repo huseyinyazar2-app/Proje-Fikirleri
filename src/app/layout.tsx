@@ -10,7 +10,13 @@ export const metadata: Metadata = {
   description: 'AI destekli uygulama fikirleri yönetim ve proje takip platformu',
   manifest: '/manifest.json',
   themeColor: '#ffffff',
-  viewport: 'width=device-width, initial-scale=1, maximum-scale=1',
+  viewport: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Proje Fikirleri',
+  },
+  applicationName: 'Proje Fikirleri',
 };
 
 import { Toaster } from 'react-hot-toast';
